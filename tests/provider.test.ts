@@ -117,7 +117,7 @@ describe("IniadChatModelProvider", () => {
     };
     expect(requestInit.body).toBeDefined();
     const requestBody = JSON.parse(requestInit.body ?? "{}");
-    expect(requestBody.max_tokens).toBe(4096);
+    expect(requestBody.max_completion_tokens).toBe(4096);
   });
 
   it("should reject prompts that exceed the documented context window", async () => {

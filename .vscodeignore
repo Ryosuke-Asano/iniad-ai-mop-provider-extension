@@ -13,3 +13,4 @@ jest.config.js
 eslint.config.mjs
 .gitignore
 package-lock.json
+coverage/
