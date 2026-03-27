@@ -39,6 +39,7 @@ import {
 } from "./constants";
 import {
   convertMessagesAnthropic,
+  convertToolsAnthropic,
   processAnthropicDelta,
   AnthropicStreamEvent,
   AnthropicRequestBody,
@@ -601,6 +602,8 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       convertMessagesAnthropic(processedMessages, {
         maxToolResultChars: MAX_TOOL_RESULT_CHARS,
       });
+    const toolConfig = convertToolsAnthropic(options);
+
     const mo = options.modelOptions as Record<string, Json> | undefined;
     const maxTokensVal =
       typeof mo?.max_tokens === "number" ? mo.max_tokens : DEFAULT_MAX_TOKENS;
@@ -637,8 +640,12 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       }
     }
 
-    // NOTE: INIAD's Anthropic proxy does not support tools/tool_choice fields.
-    // Intentionally not sending them to avoid 400 validation errors.
+    if (toolConfig.tools) {
+      requestBody.tools = toolConfig.tools;
+    }
+    if (toolConfig.tool_choice) {
+      requestBody.tool_choice = toolConfig.tool_choice;
+    }
 
     if (token.isCancellationRequested) {
       throw new vscode.CancellationError();
