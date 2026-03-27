@@ -1,0 +1,25 @@
+/** @type {import('ts-jest').JestConfigWithTsJest} */
+module.exports = {
+  preset: "ts-jest",
+  testEnvironment: "node",
+  roots: ["<rootDir>/src", "<rootDir>/tests"],
+  testMatch: ["**/__tests__/**/*.ts", "**/*.test.ts"],
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        tsconfig: "<rootDir>/tsconfig.test.json",
+      },
+    ],
+  },
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/extension.ts",
+  ],
+  moduleFileExtensions: ["ts", "js", "json"],
+  verbose: true,
+  moduleNameMapper: {
+    "^vscode$": "<rootDir>/__mocks__/vscode.ts",
+  },
+};

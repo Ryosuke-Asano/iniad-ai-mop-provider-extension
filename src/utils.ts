@@ -1,0 +1,511 @@
+import * as vscode from "vscode";
+import type {
+  IniadChatMessage,
+  IniadTool,
+  IniadContentPart,
+  Json,
+  JsonObject,
+} from "./types";
+
+/**
+ * Legacy part shape used by mocks or older API shapes
+ */
+export interface LegacyPart {
+  type?: string;
+  mimeType?: string;
+  bytes?: Uint8Array | number[];
+  data?: Uint8Array | number[];
+  buffer?: ArrayBuffer;
+  value?: string;
+  callId?: string;
+  input?: Json | JsonObject | Json[];
+  arguments?: string | JsonObject;
+  name?: string;
+  [key: string]: Json | Uint8Array | number[] | ArrayBuffer | undefined;
+}
+
+/**
+ * Helper: extract text value from a LanguageModelTextPart or plain object
+ */
+export function getTextPartValue(
+  part: vscode.LanguageModelInputPart | LegacyPart
+): string | undefined {
+  if (part instanceof vscode.LanguageModelTextPart) {
+    return part.value;
+  }
+  if (typeof part === "object" && part !== null) {
+    const p = part as { value?: string };
+    if (typeof p.value === "string") {
+      return p.value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Helper: extract image bytes and mime type from a variety of part shapes
+ */
+export function extractImageData(
+  part: vscode.LanguageModelInputPart | LegacyPart
+): { mimeType: string; data: Uint8Array } | undefined {
+  const dataPart = part as { mimeType?: unknown; data?: unknown } | null;
+  if (
+    dataPart &&
+    typeof dataPart.mimeType === "string" &&
+    dataPart.mimeType.startsWith("image/") &&
+    dataPart.data instanceof Uint8Array &&
+    dataPart.data.length > 0
+  ) {
+    return { mimeType: dataPart.mimeType, data: dataPart.data };
+  }
+
+  if (typeof part !== "object" || part === null) {
+    return undefined;
+  }
+
+  const p = part as LegacyPart;
+
+  if (p.type === "image") {
+    const mimeType = typeof p.mimeType === "string" ? p.mimeType : "image/png";
+    if (p.bytes instanceof Uint8Array && p.bytes.length > 0) {
+      return { mimeType, data: p.bytes };
+    }
+    if (p.data instanceof Uint8Array && p.data.length > 0) {
+      return { mimeType, data: p.data };
+    }
+    if (p.buffer instanceof ArrayBuffer && p.buffer.byteLength > 0) {
+      return { mimeType, data: new Uint8Array(p.buffer) };
+    }
+    if (Array.isArray(p.bytes) && p.bytes.length > 0) {
+      return { mimeType, data: new Uint8Array(p.bytes) };
+    }
+    if (Array.isArray(p.data) && p.data.length > 0) {
+      return { mimeType, data: new Uint8Array(p.data) };
+    }
+    return undefined;
+  }
+
+  if (typeof p.mimeType === "string" && p.mimeType.startsWith("image/")) {
+    const mimeType = p.mimeType;
+    if (p.bytes instanceof Uint8Array && p.bytes.length > 0) {
+      return { mimeType, data: p.bytes };
+    }
+    if (p.data instanceof Uint8Array && p.data.length > 0) {
+      return { mimeType, data: p.data };
+    }
+    if (p.buffer instanceof ArrayBuffer && p.buffer.byteLength > 0) {
+      return { mimeType, data: new Uint8Array(p.buffer) };
+    }
+    if (Array.isArray(p.bytes) && p.bytes.length > 0) {
+      return { mimeType, data: new Uint8Array(p.bytes) };
+    }
+    if (Array.isArray(p.data) && p.data.length > 0) {
+      return { mimeType, data: new Uint8Array(p.data) };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Helper: extract tool call info from a part
+ */
+export function getToolCallInfo(
+  part: vscode.LanguageModelInputPart | LegacyPart
+): { id?: string; name?: string; args?: Json | string } | undefined {
+  if (part instanceof vscode.LanguageModelToolCallPart) {
+    return { id: part.callId, name: part.name, args: part.input as Json };
+  }
+  if (typeof part === "object" && part !== null) {
+    const p = part as LegacyPart;
+    const isLegacyToolCall =
+      p.type === "tool_call" ||
+      ((typeof p.name === "string" || typeof p.callId === "string") &&
+        (p.input !== undefined || p.arguments !== undefined));
+    if (isLegacyToolCall) {
+      return {
+        id: p.callId,
+        name: p.name,
+        args: (p.input ?? p.arguments) as Json | string,
+      };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Helper: extract tool result textual representation from a part
+ */
+function truncateText(text: string, maxChars?: number): string {
+  if (typeof maxChars !== "number" || maxChars <= 0) {
+    return text;
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const removed = text.length - maxChars;
+  return `${text.slice(0, maxChars)}\n...[truncated ${removed} chars]`;
+}
+
+function isLegacyToolResultPart(part: LegacyPart): boolean {
+  if (typeof part.type === "string") {
+    const t = part.type.toLowerCase();
+    return t === "tool_result" || t === "tool_result_part";
+  }
+  if (typeof part.callId === "string") {
+    const p = part as LegacyPart & { content?: unknown };
+    const hasResultShape =
+      p.value !== undefined ||
+      p.content !== undefined ||
+      p.type === "tool_result" ||
+      p.type === "tool_result_part";
+    const looksLikeToolCall =
+      p.name !== undefined ||
+      p.input !== undefined ||
+      p.arguments !== undefined ||
+      p.type === "tool_call";
+    return hasResultShape && !looksLikeToolCall;
+  }
+  return false;
+}
+
+export function getToolResultTexts(
+  part: vscode.LanguageModelInputPart | LegacyPart,
+  maxChars?: number
+): string[] {
+  const results: string[] = [];
+
+  if (part instanceof vscode.LanguageModelToolResultPart) {
+    for (const inner of part.content) {
+      const tv = getTextPartValue(
+        inner as vscode.LanguageModelInputPart | LegacyPart
+      );
+      if (tv !== undefined) {
+        results.push(truncateText(tv, maxChars));
+        continue;
+      }
+      try {
+        if (
+          typeof (inner as { valueOf?: () => string | object }).valueOf ===
+          "function"
+        ) {
+          const v = (inner as { valueOf: () => string | object }).valueOf();
+          results.push(
+            truncateText(
+              typeof v === "string" ? v : JSON.stringify(v),
+              maxChars
+            )
+          );
+        } else {
+          results.push(truncateText(JSON.stringify(inner), maxChars));
+        }
+      } catch {
+        results.push(truncateText(String(inner), maxChars));
+      }
+    }
+    return results;
+  }
+
+  if (typeof part === "object" && part !== null) {
+    const p = part as LegacyPart;
+    if (!isLegacyToolResultPart(p)) {
+      return results;
+    }
+    if (typeof p.value === "string") {
+      results.push(truncateText(p.value, maxChars));
+    } else if (
+      typeof (p as { valueOf?: () => string | object }).valueOf === "function"
+    ) {
+      try {
+        const v = (p as { valueOf: () => string | object }).valueOf();
+        results.push(
+          truncateText(typeof v === "string" ? v : JSON.stringify(v), maxChars)
+        );
+      } catch {
+        results.push(truncateText(JSON.stringify(p), maxChars));
+      }
+    } else {
+      results.push(truncateText(JSON.stringify(p), maxChars));
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Convert VSCode LanguageModelChatMessage to INIAD/OpenAI format
+ */
+export function convertMessages(
+  messages: readonly vscode.LanguageModelChatMessage[],
+  options?: { maxToolResultChars?: number }
+): IniadChatMessage[] {
+  const result: IniadChatMessage[] = [];
+
+  for (const msg of messages) {
+    const role =
+      msg.role === vscode.LanguageModelChatMessageRole.User
+        ? "user"
+        : msg.role === vscode.LanguageModelChatMessageRole.Assistant
+          ? "assistant"
+          : "system";
+
+    // Collect text parts
+    const textParts: string[] = [];
+    for (const part of msg.content) {
+      const tv = getTextPartValue(part);
+      if (tv !== undefined) {
+        textParts.push(tv);
+      }
+    }
+
+    // Collect images
+    const imageParts: IniadContentPart[] = [];
+    for (const part of msg.content) {
+      const img = extractImageData(part);
+      if (!img) continue;
+      if (img.data && img.data.length > 0) {
+        const base64Data = Buffer.from(img.data).toString("base64");
+        // INIAD API: explicitly specify detail as "low" to save tokens
+        // When "auto" is used, it may be treated as "high" equivalent
+        imageParts.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${img.mimeType};base64,${base64Data}`,
+            detail: "low",
+          },
+        });
+      } else {
+        console.warn("[INIAD] Image part has no accessible byte data:", part);
+      }
+    }
+
+    // Handle tool calls
+    const toolCalls = msg.content
+      .map((p) => getToolCallInfo(p))
+      .filter(
+        (t): t is { id?: string; name?: string; args?: Json | string } => !!t
+      );
+
+    let emittedAnyMessage = false;
+    if (toolCalls.length > 0) {
+      const assistantContent = textParts.join("");
+      result.push({
+        role: "assistant",
+        content: assistantContent || "",
+        tool_calls: toolCalls.map((tc) => ({
+          id: tc.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
+          type: "function",
+          function: {
+            name: tc.name ?? "unknown",
+            arguments: JSON.stringify(tc.args ?? {}),
+          },
+        })),
+      });
+      emittedAnyMessage = true;
+    }
+
+    // Handle tool results
+    const toolResults = getToolResultEntries(
+      msg.content as Array<vscode.LanguageModelInputPart | LegacyPart>,
+      options?.maxToolResultChars
+    );
+    for (const tr of toolResults) {
+      result.push({
+        role: "tool",
+        tool_call_id: tr.callId,
+        content: tr.content || "",
+      });
+      emittedAnyMessage = true;
+    }
+
+    if (
+      (textParts.length > 0 || imageParts.length > 0) &&
+      !(role === "assistant" && toolCalls.length > 0)
+    ) {
+      if (imageParts.length > 0) {
+        const contentParts: IniadContentPart[] = [];
+        const textContent = textParts.join("");
+        if (textContent) {
+          contentParts.push({ type: "text", text: textContent });
+        }
+        contentParts.push(...imageParts);
+        result.push({ role, content: contentParts });
+      } else {
+        result.push({ role, content: textParts.join("") });
+      }
+      emittedAnyMessage = true;
+    }
+
+    if (!emittedAnyMessage) {
+      result.push({ role, content: "(empty message)" });
+    }
+  }
+
+  return result;
+}
+
+function getToolResultEntries(
+  parts: Array<vscode.LanguageModelInputPart | LegacyPart>,
+  maxChars?: number
+): Array<{ callId: string; content: string }> {
+  const entries: Array<{ callId: string; content: string }> = [];
+
+  for (const part of parts) {
+    if (part instanceof vscode.LanguageModelToolResultPart) {
+      const content = getToolResultTexts(part, maxChars).join("\n").trim();
+      entries.push({ callId: part.callId, content });
+      continue;
+    }
+
+    if (typeof part !== "object" || part === null) {
+      continue;
+    }
+    const legacy = part as LegacyPart;
+    if (!isLegacyToolResultPart(legacy)) {
+      continue;
+    }
+    if (typeof legacy.callId !== "string" || !legacy.callId) {
+      continue;
+    }
+    const content = getToolResultTexts(legacy, maxChars).join("\n").trim();
+    entries.push({ callId: legacy.callId, content });
+  }
+
+  return entries;
+}
+
+export function getFirstToolResultCallId(
+  parts: Array<vscode.LanguageModelInputPart | LegacyPart>
+): string | undefined {
+  for (const p of parts) {
+    if (p instanceof vscode.LanguageModelToolResultPart) {
+      return p.callId;
+    }
+    if (typeof p === "object" && p !== null) {
+      const lp = p as LegacyPart;
+      if (typeof lp.callId === "string") {
+        return lp.callId;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Convert VSCode tools to INIAD/OpenAI format
+ */
+export function convertTools(
+  options: vscode.ProvideLanguageModelChatResponseOptions
+): {
+  tools?: IniadTool[];
+  tool_choice?: "auto" | { type: "function"; function: { name: string } };
+} {
+  const toolsInput = options.tools ?? [];
+  if (toolsInput.length === 0) {
+    if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
+      throw new Error(
+        "LanguageModelChatToolMode.Required requires at least one tool."
+      );
+    }
+    return {};
+  }
+
+  const tools: IniadTool[] = toolsInput.map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema as JsonObject,
+    },
+  }));
+
+  let tool_choice: "auto" | { type: "function"; function: { name: string } } =
+    "auto";
+
+  if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
+    if (tools.length !== 1) {
+      throw new Error(
+        "LanguageModelChatToolMode.Required is not supported with more than one tool."
+      );
+    }
+    tool_choice = {
+      type: "function",
+      function: { name: tools[0].function.name },
+    };
+  }
+
+  return { tools, tool_choice };
+}
+
+// Re-export from json-utils for backwards compatibility
+export { tryParseJSONObject } from "./json-utils";
+
+/**
+ * Validate chat request
+ */
+export function validateRequest(
+  messages:
+    | readonly vscode.LanguageModelChatMessage[]
+    | readonly {
+        role: string;
+        content: (vscode.LanguageModelInputPart | LegacyPart)[];
+      }[]
+): void {
+  if (!messages || messages.length === 0) {
+    throw new Error("Messages array is empty");
+  }
+
+  for (const msg of messages) {
+    if (!msg.content || msg.content.length === 0) {
+      throw new Error("Message has no content");
+    }
+  }
+}
+
+/**
+ * Estimate token count (rough approximation: ~4 chars per token)
+ */
+export function estimateTokens(text: string): number {
+  const result = Math.ceil(text.length / 4);
+  return result;
+}
+
+/**
+ * Estimate message array tokens
+ */
+export function estimateMessagesTokens(
+  messages:
+    | readonly vscode.LanguageModelChatMessage[]
+    | readonly {
+        content: (vscode.LanguageModelInputPart | LegacyPart)[];
+      }[],
+  options?: { maxToolResultChars?: number }
+): number {
+  let total = 0;
+  for (const m of messages) {
+    for (const part of m.content) {
+      const tv = getTextPartValue(part);
+      if (tv !== undefined) {
+        total += estimateTokens(tv);
+        continue;
+      }
+      const img = extractImageData(part);
+      if (img) {
+        // Rough estimate based on base64 size to avoid undercount
+        const approxBase64Tokens = Math.ceil(img.data.length / 3);
+        total += Math.max(1500, approxBase64Tokens);
+        continue;
+      }
+      const toolResultTexts = getToolResultTexts(
+        part,
+        options?.maxToolResultChars
+      );
+      if (toolResultTexts.length > 0) {
+        for (const tr of toolResultTexts) {
+          total += estimateTokens(tr);
+        }
+      }
+    }
+  }
+  return total;
+}

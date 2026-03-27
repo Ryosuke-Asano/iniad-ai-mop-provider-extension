@@ -1,0 +1,79 @@
+{
+  "name": "iniad-ai-mop-vscode-chat",
+  "displayName": "INIAD AI MOP Provider for VS Code",
+  "description": "Integrates INIAD OpenAI-compatible API models (GPT-4o, GPT-4o-mini, GPT-3.5-turbo, etc.) into VS Code Copilot Chat",
+  "version": "0.1.0",
+  "publisher": "Ryosuke-Asano",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ryosuke-Asano/iniad-ai-mop-provider-extension"
+  },
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "ai",
+    "chat",
+    "copilot",
+    "iniad",
+    "openai",
+    "gpt",
+    "llm"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:iniad.manage"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "iniad",
+        "displayName": "INIAD AI MOP",
+        "managementCommand": "iniad.manage"
+      }
+    ],
+    "commands": [
+      {
+        "command": "iniad.manage",
+        "title": "Manage INIAD AI MOP Provider",
+        "category": "INIAD"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "download-api": "dts dev",
+    "postdownload-api": "dts main",
+    "postinstall": "npm run download-api",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "package": "vsce package --no-yarn",
+    "publish": "vsce publish --no-yarn"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.1.0",
+    "@types/vscode": "^1.104.0",
+    "@vscode/dts": "^0.4.1",
+    "eslint": "^9.39.2",
+    "jest": "^30.2.0",
+    "prettier": "^3.8.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.24.1"
+  }
+}
