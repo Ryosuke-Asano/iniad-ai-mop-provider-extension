@@ -1,0 +1,15 @@
+.vscode/
+.git/
+src/
+tests/
+__mocks__/
+node_modules/
+.vscode-test/
+*.ts
+!out/**/*.js
+tsconfig.json
+tsconfig.test.json
+jest.config.js
+eslint.config.mjs
+.gitignore
+package-lock.json
