@@ -1,5 +1,8 @@
-/** INIAD AI MOP API base URL */
+/** INIAD AI MOP API base URL (OpenAI-compatible) */
 export const BASE_URL = "https://api.openai.iniad.org/api/v1";
+
+/** INIAD AI MOP API base URL (Anthropic-compatible) */
+export const ANTHROPIC_BASE_URL = "https://api.anthropic.iniad.org/api/v1";
 
 /** Maximum characters allowed in a tool result */
 export const MAX_TOOL_RESULT_CHARS = 20000;

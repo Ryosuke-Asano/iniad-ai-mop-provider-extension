@@ -29,16 +29,23 @@ import {
 } from "./utils";
 import { IniadVisionApiClient } from "./vision-api-client";
 import { ToolCallStateMachine } from "./tool-call-buffer";
-import { processSseStream } from "./streaming";
+import { processSseStream, processAnthropicSseStream } from "./streaming";
 import {
   BASE_URL,
+  ANTHROPIC_BASE_URL,
   MAX_TOOL_RESULT_CHARS,
   MAX_TOOLS_PER_REQUEST,
   DEFAULT_MAX_TOKENS,
 } from "./constants";
+import {
+  convertMessagesAnthropic,
+  processAnthropicDelta,
+  AnthropicStreamEvent,
+  AnthropicRequestBody,
+} from "./anthropic";
 
 /**
- * VS Code Chat provider backed by INIAD AI MOP API (OpenAI-compatible).
+ * VS Code Chat provider backed by INIAD AI MOP API (OpenAI + Anthropic compatible).
  */
 export class IniadChatModelProvider implements LanguageModelChatProvider {
   /** Debug counter */
@@ -139,14 +146,19 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
    * Pick a fallback vision model for image input
    */
   private getVisionFallbackModelId(): string | undefined {
-    // All GPT-5.4 models support vision natively; use nano as lightweight fallback
+    // Use OpenAI models for vision fallback (Anthropic models have native vision)
     const preferred = INIAD_MODELS.find(
-      (m) => m.id === "gpt-5.4-nano" && m.supportsVision
+      (m) =>
+        m.id === "gpt-5.4-nano" &&
+        m.supportsVision &&
+        m.provider === "openai"
     );
     if (preferred) {
       return preferred.id;
     }
-    return INIAD_MODELS.find((m) => m.supportsVision)?.id;
+    return INIAD_MODELS.find(
+      (m) => m.supportsVision && m.provider === "openai"
+    )?.id;
   }
 
   /**
@@ -350,113 +362,35 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
         );
       }
 
-      const toolConfig = convertTools(options);
-      const iniadMessages = convertMessages(processedMessages, {
-        maxToolResultChars: MAX_TOOL_RESULT_CHARS,
-      });
       validateRequest(processedMessages);
 
-      // Estimate tokens (rough approximation)
-      const inputTokenCount = estimateMessagesTokens(processedMessages, {
-        maxToolResultChars: MAX_TOOL_RESULT_CHARS,
-      });
-      const toolTokenCount = this.estimateToolTokens(toolConfig.tools);
       const effectiveModelInfo = this.getModelInfo(effectiveModelId);
-      const mo = options.modelOptions as Record<string, Json> | undefined;
-      const maxTokensVal =
-        typeof mo?.max_tokens === "number" ? mo.max_tokens : DEFAULT_MAX_TOKENS;
-      const temperatureVal =
-        typeof mo?.temperature === "number" ? mo.temperature : 0.7;
-      const effectiveMaxOutputTokens =
-        effectiveModelInfo?.maxOutput ?? model.maxOutputTokens;
-      const requestedMaxTokens = Math.min(
-        maxTokensVal,
-        effectiveMaxOutputTokens
-      );
-      const tokenLimit = Math.max(
-        1,
-        effectiveModelInfo
-          ? effectiveModelInfo.contextWindow
-          : model.maxInputTokens
-      );
-      const totalEstimatedTokens = inputTokenCount + toolTokenCount;
-      if (totalEstimatedTokens > tokenLimit) {
-        console.error("[INIAD Model Provider] Message exceeds token limit", {
-          total: totalEstimatedTokens,
-          messageTokens: inputTokenCount,
-          toolTokens: toolTokenCount,
-          tokenLimit,
-          requestedMaxTokens,
-        });
-        throw new Error("Message exceeds token limit.");
-      }
-      const requestBody: IniadRequestBody = {
-        model: effectiveModelId,
-        messages: iniadMessages,
-        stream: true,
-        max_completion_tokens: requestedMaxTokens,
-        temperature: temperatureVal,
-      };
 
-      // Allow-list model options
-      if (mo) {
-        if (typeof mo.stop === "string") {
-          requestBody.stop = mo.stop;
-        } else if (
-          Array.isArray(mo.stop) &&
-          mo.stop.every((s) => typeof s === "string")
-        ) {
-          requestBody.stop = mo.stop;
-        }
-        if (typeof mo.frequency_penalty === "number") {
-          requestBody.frequency_penalty = mo.frequency_penalty;
-        }
-        if (typeof mo.presence_penalty === "number") {
-          requestBody.presence_penalty = mo.presence_penalty;
-        }
-      }
-
-      if (toolConfig.tools) {
-        requestBody.tools = toolConfig.tools;
-      }
-      if (toolConfig.tool_choice) {
-        requestBody.tool_choice = toolConfig.tool_choice;
-      }
-
-      if (token.isCancellationRequested) {
-        throw new vscode.CancellationError();
-      }
-      const response = await fetch(`${BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "User-Agent": this.userAgent,
-        },
-        signal: abortController.signal,
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[INIAD Model Provider] API error response", errorText);
-        throw this.toLanguageModelError(
-          response.status,
-          response.statusText,
-          errorText
+      if (effectiveModelInfo?.provider === "anthropic") {
+        await this.executeAnthropicRequest(
+          effectiveModelId,
+          processedMessages,
+          options,
+          model,
+          trackingProgress,
+          token,
+          toolCallState,
+          apiKey,
+          abortController
+        );
+      } else {
+        await this.executeOpenAiRequest(
+          effectiveModelId,
+          processedMessages,
+          options,
+          model,
+          trackingProgress,
+          token,
+          toolCallState,
+          apiKey,
+          abortController
         );
       }
-
-      if (!response.body) {
-        throw new Error("No response body from INIAD API");
-      }
-
-      await this.processStreamingResponse(
-        response.body,
-        trackingProgress,
-        token,
-        toolCallState
-      );
     } catch (err) {
       if (
         token.isCancellationRequested ||
@@ -533,12 +467,255 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
   }
 
   /**
-   * Read and parse the INIAD streaming (SSE) response and report parts.
+   * Execute a chat request against the OpenAI-compatible endpoint.
+   */
+  private async executeOpenAiRequest(
+    effectiveModelId: string,
+    processedMessages: readonly LanguageModelChatMessage[],
+    options: ProvideLanguageModelChatResponseOptions,
+    model: LanguageModelChatInformation,
+    progress: Progress<LanguageModelResponsePart>,
+    token: CancellationToken,
+    toolCallState: ToolCallStateMachine,
+    apiKey: string,
+    abortController: AbortController
+  ): Promise<void> {
+    const toolConfig = convertTools(options);
+    const iniadMessages = convertMessages(processedMessages, {
+      maxToolResultChars: MAX_TOOL_RESULT_CHARS,
+    });
+
+    const inputTokenCount = estimateMessagesTokens(processedMessages, {
+      maxToolResultChars: MAX_TOOL_RESULT_CHARS,
+    });
+    const toolTokenCount = this.estimateToolTokens(toolConfig.tools);
+    const effectiveModelInfo = this.getModelInfo(effectiveModelId);
+    const mo = options.modelOptions as Record<string, Json> | undefined;
+    const maxTokensVal =
+      typeof mo?.max_tokens === "number" ? mo.max_tokens : DEFAULT_MAX_TOKENS;
+    const temperatureVal =
+      typeof mo?.temperature === "number" ? mo.temperature : 0.7;
+    const effectiveMaxOutputTokens =
+      effectiveModelInfo?.maxOutput ?? model.maxOutputTokens;
+    const requestedMaxTokens = Math.min(maxTokensVal, effectiveMaxOutputTokens);
+    const tokenLimit = Math.max(
+      1,
+      effectiveModelInfo
+        ? effectiveModelInfo.contextWindow
+        : model.maxInputTokens
+    );
+    const totalEstimatedTokens = inputTokenCount + toolTokenCount;
+    if (totalEstimatedTokens > tokenLimit) {
+      console.error("[INIAD Model Provider] Message exceeds token limit", {
+        total: totalEstimatedTokens,
+        messageTokens: inputTokenCount,
+        toolTokens: toolTokenCount,
+        tokenLimit,
+        requestedMaxTokens,
+      });
+      throw new Error("Message exceeds token limit.");
+    }
+    const requestBody: IniadRequestBody = {
+      model: effectiveModelId,
+      messages: iniadMessages,
+      stream: true,
+      max_completion_tokens: requestedMaxTokens,
+      temperature: temperatureVal,
+    };
+
+    if (mo) {
+      if (typeof mo.stop === "string") {
+        requestBody.stop = mo.stop;
+      } else if (
+        Array.isArray(mo.stop) &&
+        mo.stop.every((s) => typeof s === "string")
+      ) {
+        requestBody.stop = mo.stop;
+      }
+      if (typeof mo.frequency_penalty === "number") {
+        requestBody.frequency_penalty = mo.frequency_penalty;
+      }
+      if (typeof mo.presence_penalty === "number") {
+        requestBody.presence_penalty = mo.presence_penalty;
+      }
+    }
+
+    if (toolConfig.tools) {
+      requestBody.tools = toolConfig.tools;
+    }
+    if (toolConfig.tool_choice) {
+      requestBody.tool_choice = toolConfig.tool_choice;
+    }
+
+    if (token.isCancellationRequested) {
+      throw new vscode.CancellationError();
+    }
+    const response = await fetch(`${BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": this.userAgent,
+      },
+      signal: abortController.signal,
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[INIAD Model Provider] API error response", errorText);
+      throw this.toLanguageModelError(
+        response.status,
+        response.statusText,
+        errorText
+      );
+    }
+
+    if (!response.body) {
+      throw new Error("No response body from INIAD API");
+    }
+
+    await this.processOpenAiStreamingResponse(
+      response.body,
+      progress,
+      token,
+      toolCallState
+    );
+  }
+
+  /**
+   * Execute a chat request against the Anthropic-compatible endpoint.
+   */
+  private async executeAnthropicRequest(
+    effectiveModelId: string,
+    processedMessages: readonly LanguageModelChatMessage[],
+    options: ProvideLanguageModelChatResponseOptions,
+    model: LanguageModelChatInformation,
+    progress: Progress<LanguageModelResponsePart>,
+    token: CancellationToken,
+    toolCallState: ToolCallStateMachine,
+    apiKey: string,
+    abortController: AbortController
+  ): Promise<void> {
+    const { system, messages: anthropicMessages } =
+      convertMessagesAnthropic(processedMessages, {
+        maxToolResultChars: MAX_TOOL_RESULT_CHARS,
+      });
+    const mo = options.modelOptions as Record<string, Json> | undefined;
+    const maxTokensVal =
+      typeof mo?.max_tokens === "number" ? mo.max_tokens : DEFAULT_MAX_TOKENS;
+    const effectiveModelInfo = this.getModelInfo(effectiveModelId);
+    const effectiveMaxOutputTokens =
+      effectiveModelInfo?.maxOutput ?? model.maxOutputTokens;
+    const requestedMaxTokens = Math.min(maxTokensVal, effectiveMaxOutputTokens);
+
+    const requestBody: AnthropicRequestBody = {
+      model: effectiveModelId,
+      max_tokens: requestedMaxTokens,
+      stream: true,
+      messages: anthropicMessages,
+    };
+
+    if (system) {
+      requestBody.system = system;
+    }
+
+    const temperatureVal =
+      typeof mo?.temperature === "number" ? mo.temperature : undefined;
+    if (temperatureVal !== undefined) {
+      requestBody.temperature = temperatureVal;
+    }
+
+    if (mo) {
+      if (typeof mo.stop === "string") {
+        requestBody.stop_sequences = [mo.stop];
+      } else if (
+        Array.isArray(mo.stop) &&
+        mo.stop.every((s) => typeof s === "string")
+      ) {
+        requestBody.stop_sequences = mo.stop as string[];
+      }
+    }
+
+    // NOTE: INIAD's Anthropic proxy does not support tools/tool_choice fields.
+    // Intentionally not sending them to avoid 400 validation errors.
+
+    if (token.isCancellationRequested) {
+      throw new vscode.CancellationError();
+    }
+    const response = await fetch(`${ANTHROPIC_BASE_URL}/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json",
+        "User-Agent": this.userAgent,
+        "anthropic-version": "2023-06-01",
+      },
+      signal: abortController.signal,
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        "[INIAD Model Provider] Anthropic API error response",
+        errorText
+      );
+      throw this.toLanguageModelError(
+        response.status,
+        response.statusText,
+        errorText
+      );
+    }
+
+    if (!response.body) {
+      throw new Error("No response body from Anthropic API");
+    }
+
+    await this.processAnthropicStreamingResponse(
+      response.body,
+      progress,
+      token,
+      toolCallState
+    );
+  }
+
+  /**
+   * Read and parse an Anthropic streaming response.
+   */
+  private async processAnthropicStreamingResponse(
+    responseBody: ReadableStream<Uint8Array>,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    token: vscode.CancellationToken,
+    toolCallState: ToolCallStateMachine
+  ): Promise<void> {
+    try {
+      await processAnthropicSseStream<AnthropicStreamEvent>(
+        responseBody,
+        token,
+        (raw) => JSON.parse(raw) as AnthropicStreamEvent,
+        {
+          onData: (_eventType, parsed) => {
+            processAnthropicDelta(parsed, progress, toolCallState);
+          },
+          onDone: () => {
+            toolCallState.flushToolCallBuffers(progress, false);
+            toolCallState.flushActiveTextToolCall(progress);
+          },
+        }
+      );
+    } finally {
+      toolCallState.reset();
+    }
+  }
+
+  /**
+   * Read and parse the OpenAI streaming (SSE) response and report parts.
    * @param responseBody The readable stream body.
    * @param progress Progress reporter for streamed parts.
    * @param token Cancellation token.
    */
-  private async processStreamingResponse(
+  private async processOpenAiStreamingResponse(
     responseBody: ReadableStream<Uint8Array>,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,

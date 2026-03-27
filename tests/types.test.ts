@@ -201,31 +201,17 @@ describe("IniadChatResponse", () => {
 });
 
 describe("INIAD_MODELS", () => {
-  it("should have 3 models", () => {
-    expect(INIAD_MODELS.length).toBe(3);
+  it("should have 1 model", () => {
+    expect(INIAD_MODELS.length).toBe(1);
   });
 
-  it("should include gpt-5.4", () => {
-    const model = INIAD_MODELS.find((m) => m.id === "gpt-5.4");
+  it("should include o4-mini", () => {
+    const model = INIAD_MODELS.find((m) => m.id === "o4-mini");
     expect(model).toBeDefined();
     expect(model?.supportsVision).toBe(true);
     expect(model?.supportsTools).toBe(true);
-    expect(model?.contextWindow).toBe(1000000);
-    expect(model?.maxOutput).toBe(131072);
-  });
-
-  it("should include gpt-5.4-mini", () => {
-    const model = INIAD_MODELS.find((m) => m.id === "gpt-5.4-mini");
-    expect(model).toBeDefined();
-    expect(model?.supportsVision).toBe(true);
-    expect(model?.contextWindow).toBe(400000);
-  });
-
-  it("should include gpt-5.4-nano", () => {
-    const model = INIAD_MODELS.find((m) => m.id === "gpt-5.4-nano");
-    expect(model).toBeDefined();
-    expect(model?.supportsVision).toBe(true);
-    expect(model?.supportsTools).toBe(true);
-    expect(model?.contextWindow).toBe(400000);
+    expect(model?.contextWindow).toBe(200000);
+    expect(model?.maxOutput).toBe(100000);
+    expect(model?.provider).toBe("openai");
   });
 });

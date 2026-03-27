@@ -1,7 +1,7 @@
 {
   "name": "iniad-ai-mop-vscode-chat",
   "displayName": "INIAD AI MOP Provider for VS Code",
-  "description": "Integrates INIAD AI MOP (OpenAI-compatible API) models into VS Code Copilot Chat with vision and tool calling support",
+  "description": "INIAD AI MOPモデル（OpenAI + Anthropic）をVS Code Copilot Chatに統合します。ビジョン機能とツール呼び出しに対応",
   "version": "0.1.1",
   "publisher": "Ryosuke-Asano",
   "license": "MIT",
@@ -24,6 +24,8 @@
     "iniad",
     "openai",
     "gpt",
+    "anthropic",
+    "claude",
     "llm"
   ],
   "activationEvents": [
@@ -41,7 +43,7 @@
     "commands": [
       {
         "command": "iniad.manage",
-        "title": "Manage INIAD AI MOP Provider",
+        "title": "INIAD AI MOP Providerを管理",
         "category": "INIAD"
       }
     ]

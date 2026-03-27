@@ -45,10 +45,10 @@ describe("IniadChatModelProvider", () => {
       createToken()
     );
 
-    const gpt54 = models.find((m) => m.id === "gpt-5.4");
-    expect(gpt54).toBeDefined();
-    expect(gpt54?.maxInputTokens).toBe(1000000);
-    expect(gpt54?.maxOutputTokens).toBe(131072);
+    const o4mini = models.find((m) => m.id === "o4-mini");
+    expect(o4mini).toBeDefined();
+    expect(o4mini?.maxInputTokens).toBe(200000);
+    expect(o4mini?.maxOutputTokens).toBe(100000);
   });
 
   it("should allow prompts within the context window", async () => {
@@ -60,9 +60,9 @@ describe("IniadChatModelProvider", () => {
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
       createToken()
     );
-    const gpt54 = models.find((m) => m.id === "gpt-5.4");
-    if (!gpt54) {
-      throw new Error("gpt-5.4 not found");
+    const o4mini = models.find((m) => m.id === "o4-mini");
+    if (!o4mini) {
+      throw new Error("o4-mini not found");
     }
 
     const largePrompt = "a".repeat(30000 * 4);
@@ -73,7 +73,7 @@ describe("IniadChatModelProvider", () => {
 
     await expect(
       provider.provideLanguageModelChatResponse(
-        gpt54,
+        o4mini,
         messages,
         {},
         progress,
@@ -93,9 +93,9 @@ describe("IniadChatModelProvider", () => {
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
       createToken()
     );
-    const gpt54 = models.find((m) => m.id === "gpt-5.4");
-    if (!gpt54) {
-      throw new Error("gpt-5.4 not found");
+    const o4mini = models.find((m) => m.id === "o4-mini");
+    if (!o4mini) {
+      throw new Error("o4-mini not found");
     }
 
     const messages = [vscode.LanguageModelChatMessage.User("hello")];
@@ -104,7 +104,7 @@ describe("IniadChatModelProvider", () => {
     } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
 
     await provider.provideLanguageModelChatResponse(
-      gpt54,
+      o4mini,
       messages,
       {},
       progress,
@@ -129,12 +129,12 @@ describe("IniadChatModelProvider", () => {
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
       createToken()
     );
-    const gpt54nano = models.find((m) => m.id === "gpt-5.4-nano");
-    if (!gpt54nano) {
-      throw new Error("gpt-5.4-nano not found");
+    const o4mini = models.find((m) => m.id === "o4-mini");
+    if (!o4mini) {
+      throw new Error("o4-mini not found");
     }
 
-    const tooLargePrompt = "a".repeat(400001 * 4);
+    const tooLargePrompt = "a".repeat(200001 * 4);
     const messages = [vscode.LanguageModelChatMessage.User(tooLargePrompt)];
     const progress = {
       report: jest.fn(),
@@ -142,7 +142,7 @@ describe("IniadChatModelProvider", () => {
 
     await expect(
       provider.provideLanguageModelChatResponse(
-        gpt54nano,
+        o4mini,
         messages,
         {},
         progress,

@@ -3,105 +3,105 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0%2B-blue)](https://code.visualstudio.com/)
 
-Integrates [INIAD AI MOP](https://api.openai.iniad.org/) (OpenAI-compatible API) models into VS Code Copilot Chat with vision support and tool calling.
+[INIAD AI MOP](https://api.openai.iniad.org/)（OpenAI互換API）のモデルをVS Code Copilot Chatに統合します。ビジョン機能とツール呼び出しに対応しています。
 
-## Features
+## 機能
 
-- **Multiple Model Support**
-  - **GPT-5.4**: 1M context window, up to 128K output tokens, vision support
-  - **GPT-5.4 mini**: 400K context window, up to 128K output tokens, vision support
-  - **GPT-5.4 nano**: 400K context window, up to 128K output tokens, vision support
+- **複数モデル対応**
+  - **GPT-5.4**: 100万トークンのコンテキストウィンドウ、最大128K出力トークン、ビジョン対応
+  - **GPT-5.4 mini**: 40万トークンのコンテキストウィンドウ、最大128K出力トークン、ビジョン対応
+  - **GPT-5.4 nano**: 40万トークンのコンテキストウィンドウ、最大128K出力トークン、ビジョン対応
 
-- **Advanced Capabilities**
-  - Tool calling support for VS Code chat participants
-  - Streaming responses via Server-Sent Events (SSE)
-  - Vision support for all GPT-5.4 models (text + image input)
-  - Token-efficient image handling (explicit `detail: "low"` to save tokens)
+- **高度な機能**
+  - VS Codeチャット参加者向けのツール呼び出し機能
+  - Server-Sent Events (SSE)によるストリーミングレスポンス
+  - すべてのGPT-5.4モデルでビジョン対応（テキスト＋画像入力）
+  - トークン効率的な画像処理（`detail: "low"`でトークンを節約）
 
-- **Secure API Key Management**
-  - Stored securely in VS Code SecretStorage
-  - Managed via Command Palette (`INIAD: Manage INIAD AI MOP Provider`)
+- **安全なAPIキー管理**
+  - VS Code SecretStorageに安全に保存
+  - コマンドパレットから管理（`INIAD: Manage INIAD AI MOP Provider`）
 
-## About INIAD AI MOP API
+## INIAD AI MOP APIについて
 
-INIAD provides an OpenAI-compatible API endpoint for INIAD students and faculty. The API is free to use for INIAD-related activities.
+INIADは、INIADの学生と教職員向けにOpenAI互換のAPIエンドポイントを提供しています。INIAD関連の活動であれば無料で使用できます。
 
-**Base URL:** `https://api.openai.iniad.org/api/v1`
+**ベースURL:** `https://api.openai.iniad.org/api/v1`
 
-### Usage Guidelines
+### 利用ガイドライン
 
-- Use only for INIAD-related activities (work, study, internships at INIAD)
-- Avoid wasting tokens; use within reasonable limits
+- INIAD関連の活動（INIADでの作業、学習、インターンシップ）でのみ使用してください
+- トークンの無駄遣いを避け、合理的な範囲内で使用してください
 
-### Getting an API Key
+### APIキーの取得方法
 
-1. Open the INIAD 講義ワークスペース (Lecture Workspace)
-2. Find the "GPT-4o mini" bot
-3. Send the command: `apikey issue`
-4. Copy the provided API key
+1. INIAD 講義ワークスペースを開く
+2. 「GPT-4o mini」ボットを見つける
+3. コマンド `apikey issue` を送信
+4. 提供されたAPIキーをコピー
 
-## Installation
+## インストール
 
-### From Source
+### ソースからビルド
 
-1. Clone the repository:
+1. リポジトリをクローン:
 
 ```bash
 git clone https://github.com/Ryosuke-Asano/iniad-ai-mop-provider-extension.git
 cd iniad-ai-mop-provider-extension
 ```
 
-2. Install dependencies:
+2. 依存関係をインストール:
 
 ```bash
 npm install
 ```
 
-3. Compile:
+3. コンパイル:
 
 ```bash
 npm run compile
 ```
 
-4. Press `F5` in VS Code to launch Extension Development Host
+4. VS Codeで `F5` を押して拡張機能開発ホストを起動
 
-### Package
+### パッケージ化
 
 ```bash
 npm run package
 ```
 
-## Setup
+## セットアップ
 
-1. Install the extension
-2. Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
-3. Run `INIAD: Manage INIAD AI MOP Provider`
-4. Enter your INIAD API key
+1. 拡張機能をインストール
+2. コマンドパレットを開く（`Ctrl+Shift+P` / `Cmd+Shift+P`）
+3. `INIAD: Manage INIAD AI MOP Provider` を実行
+4. INIAD APIキーを入力
 
-## Differences from Official OpenAI API
+## 公式OpenAI APIとの違い
 
-- Not all OpenAI API features are available (deprecated features excluded)
-- Base URL is different: `https://api.openai.iniad.org/api/v1`
-- Text Completion API `prompt` parameter is limited to `string` type
-- Embeddings API `input` parameter is limited to `string` type
-- Chat Completion API `image_url` without explicit `detail` is treated as `high` token consumption
+- すべてのOpenAI API機能が利用できるわけではありません（非推奨機能は除外）
+- ベースURLが異なります: `https://api.openai.iniad.org/api/v1`
+- Text Completion APIの `prompt` パラメータは `string` 型のみ
+- Embeddings APIの `input` パラメータは `string` 型のみ
+- Chat Completion APIで `image_url` に明示的な `detail` がない場合、`high` トークン消費として扱われます
 
-## Development
+## 開発
 
 ```bash
-# Compile
+# コンパイル
 npm run compile
 
-# Watch mode
+# ウォッチモード
 npm run watch
 
 # Lint
 npm run lint
 
-# Test
+# テスト
 npm test
 ```
 
-## License
+## ライセンス
 
 [MIT](LICENSE)

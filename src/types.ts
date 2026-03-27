@@ -116,6 +116,7 @@ export interface IniadModelInfo {
   maxOutput: number;
   supportsTools: boolean;
   supportsVision: boolean;
+  provider: "openai" | "anthropic";
 }
 
 /**
@@ -136,18 +137,32 @@ export interface IniadRequestBody {
 
 /**
  * Available INIAD AI MOP models configuration
- * Based on OpenAI GPT-5.4 family available via INIAD API
  */
 export const INIAD_MODELS: IniadModelInfo[] = [
+  // OpenAI models
   {
-    id: "gpt-5.4",
-    name: "GPT-5.4",
-    displayName: "GPT-5.4",
-    contextWindow: 1000000,
-    maxOutput: 131072,
+    id: "o4-mini",
+    name: "o4-mini",
+    displayName: "o4-mini",
+    contextWindow: 200000,
+    maxOutput: 100000,
     supportsTools: true,
     supportsVision: true,
+    provider: "openai",
   },
+  // GPT-5.4 family
+  // NOTE: GPT-5.4 models are not yet available on INIAD.
+  // Uncomment when INIAD adds GPT-5.4 support.
+  // {
+  //   id: "gpt-5.4",
+  //   name: "GPT-5.4",
+  //   displayName: "GPT-5.4",
+  //   contextWindow: 1000000,
+  //   maxOutput: 131072,
+  //   supportsTools: true,
+  //   supportsVision: true,
+  //   provider: "openai",
+  // },
   {
     id: "gpt-5.4-mini",
     name: "GPT-5.4 mini",
@@ -156,6 +171,7 @@ export const INIAD_MODELS: IniadModelInfo[] = [
     maxOutput: 131072,
     supportsTools: true,
     supportsVision: true,
+    provider: "openai",
   },
   {
     id: "gpt-5.4-nano",
@@ -165,5 +181,38 @@ export const INIAD_MODELS: IniadModelInfo[] = [
     maxOutput: 131072,
     supportsTools: true,
     supportsVision: true,
+    provider: "openai",
+  },
+  // Anthropic Claude family
+  // NOTE: INIAD's Anthropic proxy does not yet support tools/tool_choice.
+  {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6",
+    displayName: "Claude Opus 4.6",
+    contextWindow: 1000000,
+    maxOutput: 128000,
+    supportsTools: true,
+    supportsVision: true,
+    provider: "anthropic",
+  },
+  {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    displayName: "Claude Sonnet 4.6",
+    contextWindow: 1000000,
+    maxOutput: 128000,
+    supportsTools: true,
+    supportsVision: true,
+    provider: "anthropic",
+  },
+  {
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    displayName: "Claude Haiku 4.5",
+    contextWindow: 200000,
+    maxOutput: 8192,
+    supportsTools: true,
+    supportsVision: true,
+    provider: "anthropic",
   },
 ];
