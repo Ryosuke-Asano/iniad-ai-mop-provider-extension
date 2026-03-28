@@ -74,7 +74,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
   private toLanguageModelError(
     status: number,
     statusText: string,
-    details: string
+    details: string,
   ): Error {
     const message = `INIAD API error: ${status} ${statusText}${details ? `\n${details}` : ""}`;
     if (status === 401 || status === 403) {
@@ -99,7 +99,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
    */
   constructor(
     private readonly secrets: vscode.SecretStorage,
-    private readonly userAgent: string
+    private readonly userAgent: string,
   ) {
     this._visionClient = new IniadVisionApiClient(secrets);
   }
@@ -112,7 +112,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
    */
   async provideLanguageModelChatInformation(
     options: PrepareLanguageModelChatModelOptions,
-    _token: CancellationToken
+    _token: CancellationToken,
   ): Promise<LanguageModelChatInformation[]> {
     this._debugCallCount++;
     const apiKey = await this.ensureApiKey(options.silent ?? false);
@@ -150,23 +150,20 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     // Use OpenAI models for vision fallback (Anthropic models have native vision)
     const preferred = INIAD_MODELS.find(
       (m) =>
-        m.id === "gpt-5.4-nano" &&
-        m.supportsVision &&
-        m.provider === "openai"
+        m.id === "gpt-5.4-nano" && m.supportsVision && m.provider === "openai",
     );
     if (preferred) {
       return preferred.id;
     }
-    return INIAD_MODELS.find(
-      (m) => m.supportsVision && m.provider === "openai"
-    )?.id;
+    return INIAD_MODELS.find((m) => m.supportsVision && m.provider === "openai")
+      ?.id;
   }
 
   /**
    * Check if any message contains image input parts
    */
   private hasImageInput(
-    messages: readonly LanguageModelChatMessage[]
+    messages: readonly LanguageModelChatMessage[],
   ): boolean {
     for (const msg of messages) {
       for (const part of msg.content) {
@@ -206,7 +203,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
   private async processImagesForNonVisionModel(
     messages: readonly LanguageModelChatMessage[],
     _modelId: string,
-    token: CancellationToken
+    token: CancellationToken,
   ): Promise<{
     processedMessages: LanguageModelChatMessage[];
     imageDescriptions: string[];
@@ -254,7 +251,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
         const analysisPrompt = userPrompt || "Describe this image in detail.";
         const description = await this._visionClient.analyzeImage(
           imageDataUrl,
-          analysisPrompt
+          analysisPrompt,
         );
         thisMessageDescriptions.push(description);
       }
@@ -269,8 +266,8 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       if (thisMessageDescriptions.length > 0) {
         newContent.push(
           new vscode.LanguageModelTextPart(
-            `\n\n[Image Analysis]:\n${thisMessageDescriptions.join("\n\n---\n\n")}`
-          )
+            `\n\n[Image Analysis]:\n${thisMessageDescriptions.join("\n\n---\n\n")}`,
+          ),
         );
       }
 
@@ -294,7 +291,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     messages: readonly LanguageModelChatMessage[],
     options: ProvideLanguageModelChatResponseOptions,
     progress: Progress<LanguageModelResponsePart>,
-    token: CancellationToken
+    token: CancellationToken,
   ): Promise<void> {
     // Create per-request tool call state machine
     const toolCallState = new ToolCallStateMachine();
@@ -323,7 +320,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       const apiKey = await this.ensureApiKey(true);
       if (!apiKey) {
         throw vscode.LanguageModelError.NoPermissions(
-          "INIAD API key not found"
+          "INIAD API key not found",
         );
       }
 
@@ -340,17 +337,17 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
               {
                 originalModel: model.id,
                 visionModel: visionFallback,
-              }
+              },
             );
             effectiveModelId = visionFallback;
           } else {
             console.warn(
-              "[INIAD Model Provider] No vision model available, using OCR fallback"
+              "[INIAD Model Provider] No vision model available, using OCR fallback",
             );
             const result = await this.processImagesForNonVisionModel(
               messages,
               model.id,
-              token
+              token,
             );
             processedMessages = result.processedMessages;
           }
@@ -359,7 +356,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
 
       if (options.tools && options.tools.length > MAX_TOOLS_PER_REQUEST) {
         throw new Error(
-          `Cannot have more than ${MAX_TOOLS_PER_REQUEST} tools per request.`
+          `Cannot have more than ${MAX_TOOLS_PER_REQUEST} tools per request.`,
         );
       }
 
@@ -377,7 +374,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
           token,
           toolCallState,
           apiKey,
-          abortController
+          abortController,
         );
       } else {
         await this.executeOpenAiRequest(
@@ -389,7 +386,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
           token,
           toolCallState,
           apiKey,
-          abortController
+          abortController,
         );
       }
     } catch (err) {
@@ -423,7 +420,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
   provideTokenCount(
     _model: LanguageModelChatInformation,
     text: string | LanguageModelChatMessage,
-    _token: CancellationToken
+    _token: CancellationToken,
   ): Promise<number> {
     if (typeof text === "string") {
       return Promise.resolve(Math.ceil(text.length / 4));
@@ -479,7 +476,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     token: CancellationToken,
     toolCallState: ToolCallStateMachine,
     apiKey: string,
-    abortController: AbortController
+    abortController: AbortController,
   ): Promise<void> {
     const toolConfig = convertTools(options);
     const iniadMessages = convertMessages(processedMessages, {
@@ -503,7 +500,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       1,
       effectiveModelInfo
         ? effectiveModelInfo.contextWindow
-        : model.maxInputTokens
+        : model.maxInputTokens,
     );
     const totalEstimatedTokens = inputTokenCount + toolTokenCount;
     if (totalEstimatedTokens > tokenLimit) {
@@ -573,7 +570,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       throw this.toLanguageModelError(
         response.status,
         response.statusText,
-        errorText
+        errorText,
       );
     }
 
@@ -585,7 +582,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       response.body,
       progress,
       token,
-      toolCallState
+      toolCallState,
     );
   }
 
@@ -601,12 +598,14 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     token: CancellationToken,
     toolCallState: ToolCallStateMachine,
     apiKey: string,
-    abortController: AbortController
+    abortController: AbortController,
   ): Promise<void> {
-    const { system, messages: anthropicMessages } =
-      convertMessagesAnthropic(processedMessages, {
+    const { system, messages: anthropicMessages } = convertMessagesAnthropic(
+      processedMessages,
+      {
         maxToolResultChars: MAX_TOOL_RESULT_CHARS,
-      });
+      },
+    );
     const toolConfig = convertToolsAnthropic(options);
 
     const mo = options.modelOptions as Record<string, Json> | undefined;
@@ -641,7 +640,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
         Array.isArray(mo.stop) &&
         mo.stop.every((s) => typeof s === "string")
       ) {
-        requestBody.stop_sequences = mo.stop as string[];
+        requestBody.stop_sequences = mo.stop;
       }
     }
 
@@ -671,12 +670,12 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       const errorText = await response.text();
       console.error(
         "[INIAD Model Provider] Anthropic API error response",
-        errorText
+        errorText,
       );
       throw this.toLanguageModelError(
         response.status,
         response.statusText,
-        errorText
+        errorText,
       );
     }
 
@@ -688,7 +687,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       response.body,
       progress,
       token,
-      toolCallState
+      toolCallState,
     );
   }
 
@@ -699,7 +698,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     responseBody: ReadableStream<Uint8Array>,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
-    toolCallState: ToolCallStateMachine
+    toolCallState: ToolCallStateMachine,
   ): Promise<void> {
     try {
       await processAnthropicSseStream<AnthropicStreamEvent>(
@@ -714,7 +713,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
             toolCallState.flushToolCallBuffers(progress, false);
             toolCallState.flushActiveTextToolCall(progress);
           },
-        }
+        },
       );
     } finally {
       toolCallState.reset();
@@ -731,7 +730,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     responseBody: ReadableStream<Uint8Array>,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
-    toolCallState: ToolCallStateMachine
+    toolCallState: ToolCallStateMachine,
   ): Promise<void> {
     try {
       await processSseStream<IniadStreamResponse>(
@@ -746,7 +745,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
             toolCallState.flushToolCallBuffers(progress, false);
             toolCallState.flushActiveTextToolCall(progress);
           },
-        }
+        },
       );
     } finally {
       toolCallState.reset();
@@ -756,7 +755,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
   private processDelta(
     delta: IniadStreamResponse,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-    toolCallState: ToolCallStateMachine
+    toolCallState: ToolCallStateMachine,
   ): boolean {
     let emitted = false;
     const choice = delta.choices?.[0];

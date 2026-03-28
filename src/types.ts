@@ -143,7 +143,7 @@ export const INIAD_MODELS: IniadModelInfo[] = [
   {
     id: "o4-mini",
     name: "o4-mini",
-    displayName: "o4-mini",
+    displayName: "GPT-o4-mini",
     contextWindow: 200000,
     maxOutput: 100000,
     supportsTools: true,
