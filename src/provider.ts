@@ -495,7 +495,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     const maxTokensVal =
       typeof mo?.max_tokens === "number" ? mo.max_tokens : DEFAULT_MAX_TOKENS;
     const temperatureVal =
-      typeof mo?.temperature === "number" ? mo.temperature : 0.7;
+      typeof mo?.temperature === "number" ? mo.temperature : undefined;
     const effectiveMaxOutputTokens =
       effectiveModelInfo?.maxOutput ?? model.maxOutputTokens;
     const requestedMaxTokens = Math.min(maxTokensVal, effectiveMaxOutputTokens);
@@ -521,8 +521,13 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       messages: iniadMessages,
       stream: true,
       max_completion_tokens: requestedMaxTokens,
-      temperature: temperatureVal,
     };
+
+    // Only send temperature when explicitly provided — some models (e.g. o4-mini)
+    // only accept the default value and reject custom values like 0.7.
+    if (temperatureVal !== undefined) {
+      requestBody.temperature = temperatureVal;
+    }
 
     if (mo) {
       if (typeof mo.stop === "string") {
