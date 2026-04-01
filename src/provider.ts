@@ -123,6 +123,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     return INIAD_MODELS.map((model: IniadModelInfo) => ({
       id: model.id,
       name: model.displayName,
+      detail: "INIAD AI MOP",
       tooltip: `INIAD AI MOP ${model.name}`,
       family: "iniad",
       version: "1.0.0",
