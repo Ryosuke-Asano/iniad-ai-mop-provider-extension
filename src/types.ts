@@ -184,14 +184,13 @@ export const INIAD_MODELS: IniadModelInfo[] = [
     provider: "openai",
   },
   // Anthropic Claude family
-  // NOTE: INIAD's Anthropic proxy does not yet support tools/tool_choice.
   {
     id: "claude-opus-4-6",
     name: "Claude Opus 4.6",
     displayName: "Claude Opus 4.6",
     contextWindow: 1000000,
     maxOutput: 128000,
-    supportsTools: false,
+    supportsTools: true,
     supportsVision: true,
     provider: "anthropic",
   },
@@ -201,7 +200,7 @@ export const INIAD_MODELS: IniadModelInfo[] = [
     displayName: "Claude Sonnet 4.6",
     contextWindow: 1000000,
     maxOutput: 128000,
-    supportsTools: false,
+    supportsTools: true,
     supportsVision: true,
     provider: "anthropic",
   },
@@ -211,7 +210,7 @@ export const INIAD_MODELS: IniadModelInfo[] = [
     displayName: "Claude Haiku 4.5",
     contextWindow: 200000,
     maxOutput: 8192,
-    supportsTools: false,
+    supportsTools: true,
     supportsVision: true,
     provider: "anthropic",
   },
