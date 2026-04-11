@@ -18,6 +18,60 @@ import type {
   IniadRequestBody,
   Json,
 } from "./types";
+
+/** System prompt injected to inform the LLM about its restrictions. */
+const TOOL_RESTRICTION_SYSTEM_PROMPT =
+  "You do NOT have the ability to create, edit, or modify files, " +
+  "nor can you execute terminal/shell commands. " +
+  "If the user asks you to write to a file or run a command, " +
+  "explain that you cannot do so and suggest an alternative. " +
+  "You CAN read files, search code, and answer questions.\n\n" +
+  "IMPORTANT EDUCATIONAL POLICY: You are assisting students in a learning environment. " +
+  "You must NEVER output complete, copy-paste-ready code in response to a direct request. " +
+  "Instead, guide the student through the problem-solving process: " +
+  "(1) Ask the student to explain their current understanding of the problem. " +
+  "(2) Help them break the problem into smaller steps. " +
+  "(3) Provide hints, conceptual explanations, or small code snippets that illustrate " +
+  "a specific technique — but never the entire solution. " +
+  "(4) Encourage the student to write and test code themselves. " +
+  "(5) If the student shows genuine effort and understanding, you may confirm their approach " +
+  "or offer targeted corrections, but still avoid giving the full answer outright. " +
+  "Your goal is to teach, not to do the work for them.";
+
+/** Hardcoded blocked tool name patterns (case-insensitive substring match).
+ *  Covers file editing, terminal execution, and related tools. */
+const BLOCKED_TOOL_PATTERNS = [
+  "editFile",
+  "editFiles",
+  "insertEdit",
+  "replaceString",
+  "multiReplaceString",
+  "createFile",
+  "createDirectory",
+  "editNotebook",
+  "applyPatch",
+  "renameSymbol",
+  "createAndRunTask",
+  "runVscodeCommand",
+  "runNotebookCell",
+];
+
+/**
+ * Filter tools based on blocked patterns (case-insensitive substring match).
+ */
+function filterBlockedTools(
+  tools: readonly vscode.LanguageModelChatTool[] | undefined,
+  blockedPatterns: string[],
+): vscode.LanguageModelChatTool[] {
+  if (!tools || blockedPatterns.length === 0) {
+    return tools ? [...tools] : [];
+  }
+  const lowerPatterns = blockedPatterns.map((p) => p.toLowerCase());
+  return tools.filter((tool) => {
+    const lowerName = tool.name.toLowerCase();
+    return !lowerPatterns.some((pattern) => lowerName.includes(pattern));
+  });
+}
 import { INIAD_MODELS } from "./types";
 import {
   convertMessages,
@@ -26,6 +80,7 @@ import {
   estimateMessagesTokens,
   getTextPartValue,
   extractImageData,
+  cleanVscodeContentRefs,
 } from "./utils";
 import { IniadVisionApiClient } from "./vision-api-client";
 import { ToolCallStateMachine } from "./tool-call-buffer";
@@ -479,7 +534,16 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     apiKey: string,
     abortController: AbortController,
   ): Promise<void> {
-    const toolConfig = convertTools(options);
+    // Filter blocked tools before converting
+    const filteredTools = filterBlockedTools(
+      options.tools,
+      BLOCKED_TOOL_PATTERNS,
+    );
+    const filteredOptions: vscode.ProvideLanguageModelChatResponseOptions = {
+      ...options,
+      tools: filteredTools,
+    };
+    const toolConfig = convertTools(filteredOptions);
     const iniadMessages = convertMessages(processedMessages, {
       maxToolResultChars: MAX_TOOL_RESULT_CHARS,
     });
@@ -514,9 +578,19 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       });
       throw new Error("Message exceeds token limit.");
     }
+    // Prepend a system message declaring tool restrictions so the LLM
+    // knows it cannot edit files or run commands.
+    const messagesWithRestriction: IniadRequestBody["messages"] =
+      filteredTools.length < (options.tools?.length ?? 0)
+        ? [
+            { role: "system", content: TOOL_RESTRICTION_SYSTEM_PROMPT },
+            ...iniadMessages,
+          ]
+        : iniadMessages;
+
     const requestBody: IniadRequestBody = {
       model: effectiveModelId,
-      messages: iniadMessages,
+      messages: messagesWithRestriction,
       stream: true,
       max_completion_tokens: requestedMaxTokens,
     };
@@ -544,10 +618,14 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       }
     }
 
-    if (toolConfig.tools) {
+    // NOTE: Only include tools when the model supports them.
+    // INIAD's proxy may not support tools for all models, so we silently
+    // accept tool definitions from VS Code but omit them from the request
+    // when the model declares supportsTools: false.
+    if (toolConfig.tools && effectiveModelInfo?.supportsTools !== false) {
       requestBody.tools = toolConfig.tools;
     }
-    if (toolConfig.tool_choice) {
+    if (toolConfig.tool_choice && effectiveModelInfo?.supportsTools !== false) {
       requestBody.tool_choice = toolConfig.tool_choice;
     }
 
@@ -763,7 +841,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
 
     // Handle text content
     if (deltaObj?.content) {
-      const content = String(deltaObj.content);
+      const content = cleanVscodeContentRefs(String(deltaObj.content));
 
       const textResult = toolCallState.processTextContent(content, progress);
       if (textResult.emittedText) {
@@ -774,7 +852,7 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       }
     }
 
-    // Handle tool calls
+    // Handle tool calls for allowed (non-blocked) tools
     if (deltaObj?.tool_calls) {
       toolCallState.processStructuredToolCalls(deltaObj.tool_calls, progress);
     }

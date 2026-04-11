@@ -140,16 +140,6 @@ export interface IniadRequestBody {
  */
 export const INIAD_MODELS: IniadModelInfo[] = [
   // OpenAI models
-  {
-    id: "o4-mini",
-    name: "o4-mini",
-    displayName: "GPT-o4-mini",
-    contextWindow: 200000,
-    maxOutput: 100000,
-    supportsTools: true,
-    supportsVision: true,
-    provider: "openai",
-  },
   // GPT-5.4 family
   // NOTE: GPT-5.4 models are not yet available on INIAD.
   // Uncomment when INIAD adds GPT-5.4 support.

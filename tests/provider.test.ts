@@ -21,11 +21,59 @@ function createToken(): vscode.CancellationToken {
   } as unknown as vscode.CancellationToken;
 }
 
+function getLastRequestBody(): Record<string, unknown> {
+  const fetchMock = global.fetch as unknown as {
+    mock: { calls: unknown[][] };
+  };
+  const firstCall = fetchMock.mock.calls[0];
+  if (!Array.isArray(firstCall) || firstCall.length < 2) {
+    throw new Error("fetch call args not found");
+  }
+
+  const requestInit = firstCall[1];
+  if (typeof requestInit !== "object" || requestInit === null) {
+    return {};
+  }
+
+  const body = (requestInit as { body?: unknown }).body;
+  if (typeof body !== "string") {
+    return {};
+  }
+
+  const parsed: unknown = JSON.parse(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return {};
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function extractToolNames(body: Record<string, unknown>): string[] {
+  const tools = body.tools;
+  if (!Array.isArray(tools)) {
+    return [];
+  }
+
+  return tools
+    .map((tool) => {
+      if (typeof tool !== "object" || tool === null) {
+        return undefined;
+      }
+      const fn = (tool as { function?: unknown }).function;
+      if (typeof fn !== "object" || fn === null) {
+        return undefined;
+      }
+      const name = (fn as { name?: unknown }).name;
+      return typeof name === "string" ? name : undefined;
+    })
+    .filter((name): name is string => typeof name === "string");
+}
+
 describe("IniadChatModelProvider", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (secrets.get as jest.Mock).mockResolvedValue("test-api-key");
-    (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+    jest.mocked(secrets.get).mockResolvedValue("test-api-key");
+    jest.mocked(vscode.workspace.getConfiguration).mockReturnValue({
       get: jest.fn((_key: string, defaultValue: unknown) => defaultValue),
     });
     global.fetch = jest.fn().mockResolvedValue({
@@ -37,32 +85,32 @@ describe("IniadChatModelProvider", () => {
   it("should expose the full context window as maxInputTokens", async () => {
     const provider = new IniadChatModelProvider(
       secrets as unknown as vscode.SecretStorage,
-      "jest-agent"
+      "jest-agent",
     );
 
     const models = await provider.provideLanguageModelChatInformation(
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
-      createToken()
+      createToken(),
     );
 
-    const o4mini = models.find((m) => m.id === "o4-mini");
-    expect(o4mini).toBeDefined();
-    expect(o4mini?.maxInputTokens).toBe(200000);
-    expect(o4mini?.maxOutputTokens).toBe(100000);
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    expect(mini).toBeDefined();
+    expect(mini?.maxInputTokens).toBe(400000);
+    expect(mini?.maxOutputTokens).toBe(131072);
   });
 
   it("should allow prompts within the context window", async () => {
     const provider = new IniadChatModelProvider(
       secrets as unknown as vscode.SecretStorage,
-      "jest-agent"
+      "jest-agent",
     );
     const models = await provider.provideLanguageModelChatInformation(
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
-      createToken()
+      createToken(),
     );
-    const o4mini = models.find((m) => m.id === "o4-mini");
-    if (!o4mini) {
-      throw new Error("o4-mini not found");
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
     }
 
     const largePrompt = "a".repeat(30000 * 4);
@@ -73,12 +121,12 @@ describe("IniadChatModelProvider", () => {
 
     await expect(
       provider.provideLanguageModelChatResponse(
-        o4mini,
+        mini,
         messages,
         {},
         progress,
-        createToken()
-      )
+        createToken(),
+      ),
     ).resolves.toBeUndefined();
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -87,15 +135,15 @@ describe("IniadChatModelProvider", () => {
   it("should use the default max_tokens when not specified", async () => {
     const provider = new IniadChatModelProvider(
       secrets as unknown as vscode.SecretStorage,
-      "jest-agent"
+      "jest-agent",
     );
     const models = await provider.provideLanguageModelChatInformation(
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
-      createToken()
+      createToken(),
     );
-    const o4mini = models.find((m) => m.id === "o4-mini");
-    if (!o4mini) {
-      throw new Error("o4-mini not found");
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
     }
 
     const messages = [vscode.LanguageModelChatMessage.User("hello")];
@@ -104,37 +152,33 @@ describe("IniadChatModelProvider", () => {
     } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
 
     await provider.provideLanguageModelChatResponse(
-      o4mini,
+      mini,
       messages,
       {},
       progress,
-      createToken()
+      createToken(),
     );
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    const requestInit = (global.fetch as jest.Mock).mock.calls[0]?.[1] as {
-      body?: string;
-    };
-    expect(requestInit.body).toBeDefined();
-    const requestBody = JSON.parse(requestInit.body ?? "{}");
+    const requestBody = getLastRequestBody();
     expect(requestBody.max_completion_tokens).toBe(4096);
   });
 
   it("should reject prompts that exceed the documented context window", async () => {
     const provider = new IniadChatModelProvider(
       secrets as unknown as vscode.SecretStorage,
-      "jest-agent"
+      "jest-agent",
     );
     const models = await provider.provideLanguageModelChatInformation(
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
-      createToken()
+      createToken(),
     );
-    const o4mini = models.find((m) => m.id === "o4-mini");
-    if (!o4mini) {
-      throw new Error("o4-mini not found");
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
     }
 
-    const tooLargePrompt = "a".repeat(200001 * 4);
+    const tooLargePrompt = "a".repeat(400001 * 4);
     const messages = [vscode.LanguageModelChatMessage.User(tooLargePrompt)];
     const progress = {
       report: jest.fn(),
@@ -142,14 +186,108 @@ describe("IniadChatModelProvider", () => {
 
     await expect(
       provider.provideLanguageModelChatResponse(
-        o4mini,
+        mini,
         messages,
         {},
         progress,
-        createToken()
-      )
+        createToken(),
+      ),
     ).rejects.toThrow("Message exceeds token limit.");
 
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("should filter blocked tools from the request (hardcoded patterns)", async () => {
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const gpt54 = models.find((m) => m.id === "gpt-5.4");
+    if (!gpt54) {
+      throw new Error("gpt-5.4 not found");
+    }
+
+    const messages = [vscode.LanguageModelChatMessage.User("hello")];
+    const progress = {
+      report: jest.fn(),
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
+
+    const tools = [
+      { name: "copilot_editFiles", description: "Edit", inputSchema: {} },
+      { name: "copilot_readFile", description: "Read", inputSchema: {} },
+      { name: "copilot_createFile", description: "Create", inputSchema: {} },
+      {
+        name: "copilot_runNotebookCell",
+        description: "Run cell",
+        inputSchema: {},
+      },
+      { name: "copilot_viewImage", description: "View image", inputSchema: {} },
+    ] as vscode.LanguageModelChatTool[];
+
+    const options = {
+      tools,
+      toolMode: vscode.LanguageModelChatToolMode.Auto,
+    } as vscode.ProvideLanguageModelChatResponseOptions;
+
+    await provider.provideLanguageModelChatResponse(
+      gpt54,
+      messages,
+      options,
+      progress,
+      createToken(),
+    );
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const requestBody = getLastRequestBody();
+    // editFiles, createFile, runNotebookCell are blocked; readFile and viewImage remain
+    const toolNames = extractToolNames(requestBody);
+    expect(toolNames).toEqual(["copilot_readFile", "copilot_viewImage"]);
+  });
+
+  it("should allow non-blocked tools to pass through", async () => {
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const gpt54 = models.find((m) => m.id === "gpt-5.4");
+    if (!gpt54) {
+      throw new Error("gpt-5.4 not found");
+    }
+
+    const messages = [vscode.LanguageModelChatMessage.User("hello")];
+    const progress = {
+      report: jest.fn(),
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
+
+    const tools = [
+      { name: "copilot_readFile", description: "Read", inputSchema: {} },
+      { name: "copilot_viewImage", description: "View", inputSchema: {} },
+    ] as vscode.LanguageModelChatTool[];
+
+    const options = {
+      tools,
+      toolMode: vscode.LanguageModelChatToolMode.Auto,
+    } as vscode.ProvideLanguageModelChatResponseOptions;
+
+    await provider.provideLanguageModelChatResponse(
+      gpt54,
+      messages,
+      options,
+      progress,
+      createToken(),
+    );
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const requestBody = getLastRequestBody();
+    const toolNames = extractToolNames(requestBody);
+    expect(toolNames).toEqual(["copilot_readFile", "copilot_viewImage"]);
   });
 });

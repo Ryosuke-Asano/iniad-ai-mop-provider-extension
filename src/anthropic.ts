@@ -10,6 +10,7 @@ import {
   getToolCallInfo,
   getToolResultTexts,
   LegacyPart,
+  cleanVscodeContentRefs,
 } from "./utils";
 import type { ToolCallStateMachine } from "./tool-call-buffer";
 import { MAX_TOOL_RESULT_CHARS } from "./constants";
@@ -100,7 +101,7 @@ export interface AnthropicStreamEvent {
 
 export function convertMessagesAnthropic(
   messages: readonly vscode.LanguageModelChatMessage[],
-  options?: { maxToolResultChars?: number }
+  options?: { maxToolResultChars?: number },
 ): { system: string | undefined; messages: AnthropicMessage[] } {
   const systemParts: string[] = [];
   const rawMessages: AnthropicMessage[] = [];
@@ -114,7 +115,7 @@ export function convertMessagesAnthropic(
       for (const part of msg.content) {
         const tv = getTextPartValue(part);
         if (tv !== undefined) {
-          systemParts.push(tv);
+          systemParts.push(cleanVscodeContentRefs(tv));
         }
       }
       continue;
@@ -131,7 +132,7 @@ export function convertMessagesAnthropic(
     for (const part of msg.content) {
       const tv = getTextPartValue(part);
       if (tv !== undefined) {
-        contentBlocks.push({ type: "text", text: tv });
+        contentBlocks.push({ type: "text", text: cleanVscodeContentRefs(tv) });
         continue;
       }
 
@@ -165,9 +166,7 @@ export function convertMessagesAnthropic(
         }
         contentBlocks.push({
           type: "tool_use",
-          id:
-            toolCall.id ??
-            `call_${Math.random().toString(36).slice(2, 10)}`,
+          id: toolCall.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
           name: toolCall.name ?? "unknown",
           input: parsedInput,
         });
@@ -178,7 +177,7 @@ export function convertMessagesAnthropic(
       if (part instanceof vscode.LanguageModelToolResultPart) {
         const texts = getToolResultTexts(
           part,
-          options?.maxToolResultChars ?? MAX_TOOL_RESULT_CHARS
+          options?.maxToolResultChars ?? MAX_TOOL_RESULT_CHARS,
         );
         contentBlocks.push({
           type: "tool_result",
@@ -197,7 +196,7 @@ export function convertMessagesAnthropic(
       ) {
         const texts = getToolResultTexts(
           legacy,
-          options?.maxToolResultChars ?? MAX_TOOL_RESULT_CHARS
+          options?.maxToolResultChars ?? MAX_TOOL_RESULT_CHARS,
         );
         contentBlocks.push({
           type: "tool_result",
@@ -252,7 +251,7 @@ export function convertMessagesAnthropic(
 // ---------------------------------------------------------------------------
 
 export function convertToolsAnthropic(
-  options: vscode.ProvideLanguageModelChatResponseOptions
+  options: vscode.ProvideLanguageModelChatResponseOptions,
 ): {
   tools?: AnthropicTool[];
   tool_choice?: { type: "auto" | "any" | "tool"; name?: string };
@@ -261,7 +260,7 @@ export function convertToolsAnthropic(
   if (toolsInput.length === 0) {
     if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
       throw new Error(
-        "LanguageModelChatToolMode.Required requires at least one tool."
+        "LanguageModelChatToolMode.Required requires at least one tool.",
       );
     }
     return {};
@@ -298,7 +297,7 @@ export function convertToolsAnthropic(
 export function processAnthropicDelta(
   event: AnthropicStreamEvent,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-  toolCallState: ToolCallStateMachine
+  toolCallState: ToolCallStateMachine,
 ): void {
   switch (event.type) {
     case "content_block_start": {
@@ -313,7 +312,7 @@ export function processAnthropicDelta(
               function: { name: block.name, arguments: "" },
             },
           ],
-          progress
+          progress,
         );
       }
       break;
@@ -324,9 +323,10 @@ export function processAnthropicDelta(
       if (!delta) break;
 
       if (delta.type === "text_delta" && delta.text) {
+        const cleanedText = cleanVscodeContentRefs(delta.text);
         const textResult = toolCallState.processTextContent(
-          delta.text,
-          progress
+          cleanedText,
+          progress,
         );
         if (textResult.emittedText) {
           toolCallState.hasEmittedAssistantText = true;
@@ -340,7 +340,7 @@ export function processAnthropicDelta(
               function: { arguments: delta.partial_json },
             },
           ],
-          progress
+          progress,
         );
       }
       break;

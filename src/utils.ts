@@ -8,6 +8,15 @@ import type {
 } from "./types";
 
 /**
+ * Remove VS Code internal content reference links from text.
+ * These appear as markdown links like [text](..._vscodecontentref_0...)
+ * and should be stripped so the LLM doesn't copy them into its output.
+ */
+export function cleanVscodeContentRefs(text: string): string {
+  return text.replace(/\[([^\]]*)\]\([^)]*_vscodecontentref_\d*[^)]*\)/g, "$1");
+}
+
+/**
  * Legacy part shape used by mocks or older API shapes
  */
 export interface LegacyPart {
@@ -28,7 +37,7 @@ export interface LegacyPart {
  * Helper: extract text value from a LanguageModelTextPart or plain object
  */
 export function getTextPartValue(
-  part: vscode.LanguageModelInputPart | LegacyPart
+  part: vscode.LanguageModelInputPart | LegacyPart,
 ): string | undefined {
   if (part instanceof vscode.LanguageModelTextPart) {
     return part.value;
@@ -46,7 +55,7 @@ export function getTextPartValue(
  * Helper: extract image bytes and mime type from a variety of part shapes
  */
 export function extractImageData(
-  part: vscode.LanguageModelInputPart | LegacyPart
+  part: vscode.LanguageModelInputPart | LegacyPart,
 ): { mimeType: string; data: Uint8Array } | undefined {
   const dataPart = part as { mimeType?: unknown; data?: unknown } | null;
   if (
@@ -111,7 +120,7 @@ export function extractImageData(
  * Helper: extract tool call info from a part
  */
 export function getToolCallInfo(
-  part: vscode.LanguageModelInputPart | LegacyPart
+  part: vscode.LanguageModelInputPart | LegacyPart,
 ): { id?: string; name?: string; args?: Json | string } | undefined {
   if (part instanceof vscode.LanguageModelToolCallPart) {
     return { id: part.callId, name: part.name, args: part.input as Json };
@@ -171,14 +180,14 @@ function isLegacyToolResultPart(part: LegacyPart): boolean {
 
 export function getToolResultTexts(
   part: vscode.LanguageModelInputPart | LegacyPart,
-  maxChars?: number
+  maxChars?: number,
 ): string[] {
   const results: string[] = [];
 
   if (part instanceof vscode.LanguageModelToolResultPart) {
     for (const inner of part.content) {
       const tv = getTextPartValue(
-        inner as vscode.LanguageModelInputPart | LegacyPart
+        inner as vscode.LanguageModelInputPart | LegacyPart,
       );
       if (tv !== undefined) {
         results.push(truncateText(tv, maxChars));
@@ -193,8 +202,8 @@ export function getToolResultTexts(
           results.push(
             truncateText(
               typeof v === "string" ? v : JSON.stringify(v),
-              maxChars
-            )
+              maxChars,
+            ),
           );
         } else {
           results.push(truncateText(JSON.stringify(inner), maxChars));
@@ -219,7 +228,7 @@ export function getToolResultTexts(
       try {
         const v = (p as { valueOf: () => string | object }).valueOf();
         results.push(
-          truncateText(typeof v === "string" ? v : JSON.stringify(v), maxChars)
+          truncateText(typeof v === "string" ? v : JSON.stringify(v), maxChars),
         );
       } catch {
         results.push(truncateText(JSON.stringify(p), maxChars));
@@ -237,7 +246,7 @@ export function getToolResultTexts(
  */
 export function convertMessages(
   messages: readonly vscode.LanguageModelChatMessage[],
-  options?: { maxToolResultChars?: number }
+  options?: { maxToolResultChars?: number },
 ): IniadChatMessage[] {
   const result: IniadChatMessage[] = [];
 
@@ -249,12 +258,12 @@ export function convertMessages(
           ? "assistant"
           : "system";
 
-    // Collect text parts
+    // Collect text parts (strip VS Code internal content references)
     const textParts: string[] = [];
     for (const part of msg.content) {
       const tv = getTextPartValue(part);
       if (tv !== undefined) {
-        textParts.push(tv);
+        textParts.push(cleanVscodeContentRefs(tv));
       }
     }
 
@@ -283,7 +292,7 @@ export function convertMessages(
     const toolCalls = msg.content
       .map((p) => getToolCallInfo(p))
       .filter(
-        (t): t is { id?: string; name?: string; args?: Json | string } => !!t
+        (t): t is { id?: string; name?: string; args?: Json | string } => !!t,
       );
 
     let emittedAnyMessage = false;
@@ -307,7 +316,7 @@ export function convertMessages(
     // Handle tool results
     const toolResults = getToolResultEntries(
       msg.content as Array<vscode.LanguageModelInputPart | LegacyPart>,
-      options?.maxToolResultChars
+      options?.maxToolResultChars,
     );
     for (const tr of toolResults) {
       result.push({
@@ -346,7 +355,7 @@ export function convertMessages(
 
 function getToolResultEntries(
   parts: Array<vscode.LanguageModelInputPart | LegacyPart>,
-  maxChars?: number
+  maxChars?: number,
 ): Array<{ callId: string; content: string }> {
   const entries: Array<{ callId: string; content: string }> = [];
 
@@ -375,7 +384,7 @@ function getToolResultEntries(
 }
 
 export function getFirstToolResultCallId(
-  parts: Array<vscode.LanguageModelInputPart | LegacyPart>
+  parts: Array<vscode.LanguageModelInputPart | LegacyPart>,
 ): string | undefined {
   for (const p of parts) {
     if (p instanceof vscode.LanguageModelToolResultPart) {
@@ -395,7 +404,7 @@ export function getFirstToolResultCallId(
  * Convert VSCode tools to INIAD/OpenAI format
  */
 export function convertTools(
-  options: vscode.ProvideLanguageModelChatResponseOptions
+  options: vscode.ProvideLanguageModelChatResponseOptions,
 ): {
   tools?: IniadTool[];
   tool_choice?: "auto" | { type: "function"; function: { name: string } };
@@ -404,7 +413,7 @@ export function convertTools(
   if (toolsInput.length === 0) {
     if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
       throw new Error(
-        "LanguageModelChatToolMode.Required requires at least one tool."
+        "LanguageModelChatToolMode.Required requires at least one tool.",
       );
     }
     return {};
@@ -425,7 +434,7 @@ export function convertTools(
   if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
     if (tools.length !== 1) {
       throw new Error(
-        "LanguageModelChatToolMode.Required is not supported with more than one tool."
+        "LanguageModelChatToolMode.Required is not supported with more than one tool.",
       );
     }
     tool_choice = {
@@ -449,7 +458,7 @@ export function validateRequest(
     | readonly {
         role: string;
         content: (vscode.LanguageModelInputPart | LegacyPart)[];
-      }[]
+      }[],
 ): void {
   if (!messages || messages.length === 0) {
     throw new Error("Messages array is empty");
@@ -479,7 +488,7 @@ export function estimateMessagesTokens(
     | readonly {
         content: (vscode.LanguageModelInputPart | LegacyPart)[];
       }[],
-  options?: { maxToolResultChars?: number }
+  options?: { maxToolResultChars?: number },
 ): number {
   let total = 0;
   for (const m of messages) {
@@ -498,7 +507,7 @@ export function estimateMessagesTokens(
       }
       const toolResultTexts = getToolResultTexts(
         part,
-        options?.maxToolResultChars
+        options?.maxToolResultChars,
       );
       if (toolResultTexts.length > 0) {
         for (const tr of toolResultTexts) {

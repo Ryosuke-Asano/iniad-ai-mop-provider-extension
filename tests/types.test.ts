@@ -11,8 +11,6 @@ import {
   IniadChatRequest,
   IniadChatChoice,
   IniadChatResponse,
-  IniadStreamChoice,
-  IniadStreamResponse,
   INIAD_MODELS,
 } from "../src/types";
 
@@ -201,17 +199,17 @@ describe("IniadChatResponse", () => {
 });
 
 describe("INIAD_MODELS", () => {
-  it("should have 1 model", () => {
-    expect(INIAD_MODELS.length).toBe(1);
+  it("should have correct number of models", () => {
+    expect(INIAD_MODELS.length).toBe(6);
   });
 
-  it("should include o4-mini", () => {
-    const model = INIAD_MODELS.find((m) => m.id === "o4-mini");
+  it("should include gpt-5.4", () => {
+    const model = INIAD_MODELS.find((m) => m.id === "gpt-5.4");
     expect(model).toBeDefined();
     expect(model?.supportsVision).toBe(true);
     expect(model?.supportsTools).toBe(true);
-    expect(model?.contextWindow).toBe(200000);
-    expect(model?.maxOutput).toBe(100000);
+    expect(model?.contextWindow).toBe(1000000);
+    expect(model?.maxOutput).toBe(131072);
     expect(model?.provider).toBe("openai");
   });
 });
