@@ -19,12 +19,18 @@ import type {
   Json,
 } from "./types";
 
-/** System prompt injected to inform the LLM about its restrictions. */
+/** System prompt injected into EVERY request to enforce tool restrictions.
+ *  Always prepended regardless of whether tools were filtered. */
 const TOOL_RESTRICTION_SYSTEM_PROMPT =
-  "You do NOT have the ability to create, edit, or modify files, " +
-  "nor can you execute terminal/shell commands. " +
-  "If the user asks you to write to a file or run a command, " +
-  "explain that you cannot do so and suggest an alternative. " +
+  "CRITICAL SYSTEM CONSTRAINT (always applies):\n" +
+  "You do NOT have the ability to create, edit, modify, or delete files. " +
+  "You do NOT have the ability to execute terminal/shell commands or run scripts. " +
+  "These capabilities are DISABLED and you MUST NOT claim you can do them.\n" +
+  "If the user asks you to write to a file, edit code in a file, or run a command, " +
+  "you MUST clearly state: \"I cannot edit files or run terminal commands.\" " +
+  "and then suggest an alternative (e.g. explain what to do step-by-step).\n" +
+  "Even if previous conversation history suggests you previously edited a file, " +
+  "ignore that — you CANNOT edit files now and must not attempt to do so.\n" +
   "You CAN read files, search code, and answer questions.\n\n" +
   "IMPORTANT EDUCATIONAL POLICY: You are assisting students in a learning environment. " +
   "You must NEVER output complete, copy-paste-ready code in response to a direct request. " +
@@ -578,15 +584,12 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       });
       throw new Error("Message exceeds token limit.");
     }
-    // Prepend a system message declaring tool restrictions so the LLM
-    // knows it cannot edit files or run commands.
-    const messagesWithRestriction: IniadRequestBody["messages"] =
-      filteredTools.length < (options.tools?.length ?? 0)
-        ? [
-            { role: "system", content: TOOL_RESTRICTION_SYSTEM_PROMPT },
-            ...iniadMessages,
-          ]
-        : iniadMessages;
+    // ALWAYS prepend the restriction system prompt so the LLM knows
+    // it cannot edit files or run commands, regardless of tool filtering.
+    const messagesWithRestriction: IniadRequestBody["messages"] = [
+      { role: "system", content: TOOL_RESTRICTION_SYSTEM_PROMPT },
+      ...iniadMessages,
+    ];
 
     const requestBody: IniadRequestBody = {
       model: effectiveModelId,
@@ -685,6 +688,12 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
         maxToolResultChars: MAX_TOOL_RESULT_CHARS,
       },
     );
+
+    // ALWAYS prepend restriction prompt to Anthropic requests as well.
+    const systemWithRestriction = system
+      ? TOOL_RESTRICTION_SYSTEM_PROMPT + "\n\n" + system
+      : TOOL_RESTRICTION_SYSTEM_PROMPT;
+
     // const toolConfig = convertToolsAnthropic(options);
     const mo = options.modelOptions as Record<string, Json> | undefined;
     const maxTokensVal =
@@ -701,9 +710,8 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       messages: anthropicMessages,
     };
 
-    if (system) {
-      requestBody.system = system;
-    }
+    // Use the restriction-enhanced system prompt
+    requestBody.system = systemWithRestriction;
 
     const temperatureVal =
       typeof mo?.temperature === "number" ? mo.temperature : undefined;
