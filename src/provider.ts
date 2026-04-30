@@ -222,7 +222,14 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       return [];
     }
 
-    return INIAD_MODELS.map((model: IniadModelInfo) => ({
+    const config = vscode.workspace.getConfiguration("iniad");
+    const enableAllModels = config.get("enableAllModels", false) as boolean;
+
+    const visibleModels = enableAllModels
+      ? INIAD_MODELS
+      : INIAD_MODELS.filter((m) => m.enabled !== false);
+
+    return visibleModels.map((model: IniadModelInfo) => ({
       id: model.id,
       name: model.displayName,
       detail: "INIAD AI MOP",
@@ -581,11 +588,12 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
     apiKey: string,
     abortController: AbortController,
   ): Promise<void> {
-    // Filter blocked tools before converting
-    const filteredTools = filterBlockedTools(
-      options.tools,
-      BLOCKED_TOOL_PATTERNS,
-    );
+    // Filter blocked tools before converting (skip when restrictions disabled)
+    const config = vscode.workspace.getConfiguration("iniad");
+    const restrictionsDisabled = config.get("disableRestrictions", false) as boolean;
+    const filteredTools = restrictionsDisabled
+      ? (options.tools ? [...options.tools] : [])
+      : filterBlockedTools(options.tools, BLOCKED_TOOL_PATTERNS);
     const filteredOptions: vscode.ProvideLanguageModelChatResponseOptions = {
       ...options,
       tools: filteredTools,
@@ -625,12 +633,13 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       });
       throw new Error("Message exceeds token limit.");
     }
-    // ALWAYS prepend the restriction system prompt so the LLM knows
-    // it cannot edit files or run commands, regardless of tool filtering.
-    const messagesWithRestriction: IniadRequestBody["messages"] = [
-      { role: "system", content: TOOL_RESTRICTION_SYSTEM_PROMPT },
-      ...iniadMessages,
-    ];
+    // Prepend the restriction system prompt unless restrictions are disabled
+    const messagesWithRestriction: IniadRequestBody["messages"] = restrictionsDisabled
+      ? iniadMessages
+      : [
+          { role: "system", content: TOOL_RESTRICTION_SYSTEM_PROMPT },
+          ...iniadMessages,
+        ];
 
     const requestBody: IniadRequestBody = {
       model: effectiveModelId,
@@ -730,10 +739,14 @@ export class IniadChatModelProvider implements LanguageModelChatProvider {
       },
     );
 
-    // ALWAYS prepend restriction prompt to Anthropic requests as well.
-    const systemWithRestriction = system
-      ? TOOL_RESTRICTION_SYSTEM_PROMPT + "\n\n" + system
-      : TOOL_RESTRICTION_SYSTEM_PROMPT;
+    // Prepend restriction prompt unless restrictions are disabled
+    const anthropicConfig = vscode.workspace.getConfiguration("iniad");
+    const anthropicRestrictionsDisabled = anthropicConfig.get("disableRestrictions", false) as boolean;
+    const systemWithRestriction = anthropicRestrictionsDisabled
+      ? (system ?? "")
+      : system
+        ? TOOL_RESTRICTION_SYSTEM_PROMPT + "\n\n" + system
+        : TOOL_RESTRICTION_SYSTEM_PROMPT;
 
     // const toolConfig = convertToolsAnthropic(options);
     const mo = options.modelOptions as Record<string, Json> | undefined;

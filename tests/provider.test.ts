@@ -206,9 +206,9 @@ describe("IniadChatModelProvider", () => {
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
       createToken(),
     );
-    const gpt54 = models.find((m) => m.id === "gpt-5.4");
-    if (!gpt54) {
-      throw new Error("gpt-5.4 not found");
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
     }
 
     const messages = [vscode.LanguageModelChatMessage.User("hello")];
@@ -234,7 +234,7 @@ describe("IniadChatModelProvider", () => {
     } as vscode.ProvideLanguageModelChatResponseOptions;
 
     await provider.provideLanguageModelChatResponse(
-      gpt54,
+      mini,
       messages,
       options,
       progress,
@@ -257,9 +257,9 @@ describe("IniadChatModelProvider", () => {
       { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
       createToken(),
     );
-    const gpt54 = models.find((m) => m.id === "gpt-5.4");
-    if (!gpt54) {
-      throw new Error("gpt-5.4 not found");
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
     }
 
     const messages = [vscode.LanguageModelChatMessage.User("hello")];
@@ -278,7 +278,7 @@ describe("IniadChatModelProvider", () => {
     } as vscode.ProvideLanguageModelChatResponseOptions;
 
     await provider.provideLanguageModelChatResponse(
-      gpt54,
+      mini,
       messages,
       options,
       progress,
@@ -289,5 +289,147 @@ describe("IniadChatModelProvider", () => {
     const requestBody = getLastRequestBody();
     const toolNames = extractToolNames(requestBody);
     expect(toolNames).toEqual(["copilot_readFile", "copilot_viewImage"]);
+  });
+
+  it("should not filter tools when disableRestrictions is true", async () => {
+    jest.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: jest.fn((key: string, defaultValue: unknown) => {
+        if (key === "disableRestrictions") return true;
+        return defaultValue;
+      }),
+    });
+
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
+    }
+
+    const messages = [vscode.LanguageModelChatMessage.User("hello")];
+    const progress = {
+      report: jest.fn(),
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
+
+    const tools = [
+      { name: "copilot_editFiles", description: "Edit", inputSchema: {} },
+      { name: "copilot_readFile", description: "Read", inputSchema: {} },
+      { name: "copilot_createFile", description: "Create", inputSchema: {} },
+    ] as vscode.LanguageModelChatTool[];
+
+    const options = {
+      tools,
+      toolMode: vscode.LanguageModelChatToolMode.Auto,
+    } as vscode.ProvideLanguageModelChatResponseOptions;
+
+    await provider.provideLanguageModelChatResponse(
+      mini,
+      messages,
+      options,
+      progress,
+      createToken(),
+    );
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const requestBody = getLastRequestBody();
+    const toolNames = extractToolNames(requestBody);
+    // All tools should pass through when restrictions are disabled
+    expect(toolNames).toEqual([
+      "copilot_editFiles",
+      "copilot_readFile",
+      "copilot_createFile",
+    ]);
+  });
+
+  it("should not inject restriction system prompt when disableRestrictions is true", async () => {
+    jest.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: jest.fn((key: string, defaultValue: unknown) => {
+        if (key === "disableRestrictions") return true;
+        return defaultValue;
+      }),
+    });
+
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const mini = models.find((m) => m.id === "gpt-5.4-mini");
+    if (!mini) {
+      throw new Error("gpt-5.4-mini not found");
+    }
+
+    const messages = [vscode.LanguageModelChatMessage.User("hello")];
+    const progress = {
+      report: jest.fn(),
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>;
+
+    await provider.provideLanguageModelChatResponse(
+      mini,
+      messages,
+      {},
+      progress,
+      createToken(),
+    );
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const requestBody = getLastRequestBody();
+    const msgs = requestBody.messages as Array<{ role: string; content: string }>;
+    const systemMsg = msgs.find(
+      (m) =>
+        m.role === "system" &&
+        typeof m.content === "string" &&
+        m.content.includes("CRITICAL SYSTEM CONSTRAINT"),
+    );
+    expect(systemMsg).toBeUndefined();
+  });
+
+  it("should only show default models when enableAllModels is false", async () => {
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const modelIds = models.map((m) => m.id);
+    expect(modelIds).toEqual(["gpt-5.4-mini"]);
+  });
+
+  it("should show all models when enableAllModels is true", async () => {
+    jest.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: jest.fn((key: string, defaultValue: unknown) => {
+        if (key === "enableAllModels") return true;
+        return defaultValue;
+      }),
+    });
+
+    const provider = new IniadChatModelProvider(
+      secrets as unknown as vscode.SecretStorage,
+      "jest-agent",
+    );
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true } as vscode.PrepareLanguageModelChatModelOptions,
+      createToken(),
+    );
+    const modelIds = models.map((m) => m.id);
+    expect(modelIds).toEqual([
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.4-nano",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+    ]);
   });
 });
