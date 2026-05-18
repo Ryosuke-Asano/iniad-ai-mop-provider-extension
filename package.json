@@ -2,7 +2,7 @@
   "name": "iniad-ai-mop-vscode-chat",
   "displayName": "INIAD AI MOP Provider for VS Code",
   "description": "INIAD AI MOPモデル（OpenAI + Anthropic）をVS Code Copilot Chatに統合します。ビジョン機能とツール呼び出しに対応",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "Ryosuke-Asano",
   "license": "MIT",
   "icon": "icon.png",
